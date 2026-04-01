@@ -7,7 +7,7 @@ async function parseResponse(response) {
     try {
       const payload = await response.json();
       message = payload.detail ?? message;
-    } catch (error) {
+    } catch {
       message = response.statusText || message;
     }
 

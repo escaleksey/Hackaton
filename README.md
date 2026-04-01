@@ -66,6 +66,28 @@ npm run test -- --run
 
 Сейчас есть UI-тест для DOCX-редактора, который проверяет одностраничный режим редактирования без блока оригинала.
 
+## Makefile
+
+На уровне репозитория есть единая точка входа для основных проверок:
+
+```bash
+make lint
+make test
+make build
+make docker-build
+make ci
+```
+
+Полезные таргеты:
+
+- `make lint-backend` - `ruff` для `backend/src` и `backend/tests`;
+- `make lint-frontend` - `eslint` для `frontend/src`;
+- `make test-backend` - `pytest`;
+- `make test-frontend` - `vitest --run`;
+- `make build-frontend` - production build фронтенда;
+- `make docker-build` - сборка образов через `docker compose build`;
+- `make ci` - полный локальный прогон линтеров, тестов, сборки фронтенда и Docker-образов.
+
 ## Docker
 
 ### Запуск

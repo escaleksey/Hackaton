@@ -25,8 +25,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
+      - name: Run backend linter
+        run: make lint-backend
+
       - name: Run backend tests
-        run: pytest
+        run: make test-backend
 
   frontend:
     runs-on: ubuntu-latest
@@ -45,11 +48,14 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Run frontend linter
+        run: make lint-frontend
+
       - name: Run frontend tests
-        run: npm run test -- --run
+        run: make test-frontend
 
       - name: Build frontend
-        run: npm run build
+        run: make build-frontend
 
   docker:
     runs-on: ubuntu-latest
@@ -60,4 +66,4 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build docker images
-        run: docker compose build
+        run: make docker-build
