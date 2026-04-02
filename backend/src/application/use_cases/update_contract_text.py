@@ -2,7 +2,11 @@ from uuid import UUID
 
 from src.application.dto.contract_draft_result import ContractDraftResult
 from src.application.use_cases.common import ContractNotFoundError, to_result
-from src.domain.entities.document import DocumentPage, flatten_document_pages, normalize_document_pages
+from src.domain.entities.document import (
+    DocumentPage,
+    flatten_document_pages,
+    normalize_document_pages,
+)
 from src.domain.repositories.contract_repository import ContractRepository
 
 
@@ -32,6 +36,7 @@ class UpdateContractTextUseCase:
 
             contract.corrected_pages = normalized_pages
             contract.corrected_text = corrected_document_text
+            contract.annotated_file_bytes = None
         else:
             if corrected_text is None or not corrected_text.strip():
                 raise ValueError("Corrected contract text must not be empty.")

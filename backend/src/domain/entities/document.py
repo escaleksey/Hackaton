@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
 
-
 DEFAULT_PAGE_WIDTH_PT = 595.3
 DEFAULT_PAGE_HEIGHT_PT = 841.9
 
@@ -14,6 +13,7 @@ class TextRun:
     font_name: str | None = None
     font_size_pt: float | None = None
     color: str | None = None
+    highlight_color: str | None = None
 
 
 @dataclass(slots=True)
@@ -55,6 +55,18 @@ def flatten_document_pages(pages: list[DocumentPage]) -> str:
         page_chunks.append("\n".join(block_chunks))
 
     return "\n\n".join(page_chunks).strip()
+
+
+def enumerate_document_blocks(
+    pages: list[DocumentPage],
+) -> list[tuple[int, int, ParagraphBlock]]:
+    block_entries: list[tuple[int, int, ParagraphBlock]] = []
+
+    for page in pages:
+        for block in page.blocks:
+            block_entries.append((len(block_entries) + 1, page.number, block))
+
+    return block_entries
 
 
 def normalize_document_pages(pages: list[DocumentPage]) -> list[DocumentPage]:

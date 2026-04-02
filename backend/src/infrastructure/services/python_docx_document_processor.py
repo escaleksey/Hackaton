@@ -1,11 +1,15 @@
+import re
+from copy import deepcopy
+from dataclasses import replace
 from io import BytesIO
 from math import ceil
 
 from docx import Document
 from docx.document import Document as DocxDocument
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX
 from docx.oxml.ns import qn
 from docx.shared import Pt, RGBColor
+from docx.text.run import Run as DocxRun
 
 from src.application.services.document_processor import (
     ContractDocumentProcessor,
@@ -23,7 +27,7 @@ from src.domain.entities.document import (
     flatten_document_pages,
     normalize_document_pages,
 )
-
+from src.domain.entities.issue import ContractIssue
 
 ALIGNMENT_TO_NAME = {
     WD_ALIGN_PARAGRAPH.LEFT: "left",
@@ -37,6 +41,18 @@ NAME_TO_ALIGNMENT = {
     "center": WD_ALIGN_PARAGRAPH.CENTER,
     "right": WD_ALIGN_PARAGRAPH.RIGHT,
     "justify": WD_ALIGN_PARAGRAPH.JUSTIFY,
+}
+
+SEVERITY_TO_HIGHLIGHT = {
+    "high": "#ffe08a",
+    "medium": "#a9e6b3",
+    "low": "#9ad6ff",
+}
+
+DOCX_HIGHLIGHT_BY_COLOR = {
+    "#ffe08a": WD_COLOR_INDEX.YELLOW,
+    "#a9e6b3": WD_COLOR_INDEX.BRIGHT_GREEN,
+    "#9ad6ff": WD_COLOR_INDEX.TURQUOISE,
 }
 
 
@@ -65,6 +81,16 @@ class PythonDocxDocumentProcessor(ContractDocumentProcessor):
 
     def build_download(self, contract: ContractDraft) -> DownloadableContractFile:
         if contract.source_format == "docx":
+            if contract.annotated_file_bytes is not None:
+                filename = contract.filename
+                if not filename.lower().endswith(".docx"):
+                    filename = f"{filename}.docx"
+                filename = f"{filename[:-5]}_corrected.docx"
+                return DownloadableContractFile(
+                    filename=filename,
+                    content=contract.annotated_file_bytes,
+                    media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                )
             return self._build_docx(contract)
 
         filename = contract.filename
@@ -77,6 +103,53 @@ class PythonDocxDocumentProcessor(ContractDocumentProcessor):
             content=contract.current_text.encode("utf-8"),
             media_type="text/plain",
         )
+
+    def build_annotated_source_download(
+        self,
+        *,
+        filename: str,
+        source_format: str,
+        file_bytes: bytes | None,
+        issues: list[ContractIssue],
+    ) -> DownloadableContractFile | None:
+        if source_format != "docx" or file_bytes is None:
+            return None
+
+        content = self._annotate_source_docx(file_bytes, issues)
+        output_filename = filename if filename.lower().endswith(".docx") else f"{filename}.docx"
+        output_filename = f"{output_filename[:-5]}_corrected.docx"
+        return DownloadableContractFile(
+            filename=output_filename,
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+
+    def annotate_pages(
+        self,
+        pages: list[DocumentPage],
+        issues: list[ContractIssue],
+    ) -> list[DocumentPage]:
+        normalized_pages = normalize_document_pages(pages)
+        issues_by_paragraph: dict[int, list[ContractIssue]] = {}
+
+        for issue in issues:
+            issues_by_paragraph.setdefault(issue.paragraph_index, []).append(issue)
+
+        annotated_pages: list[DocumentPage] = []
+        paragraph_index = 0
+
+        for page in normalized_pages:
+            annotated_blocks: list[ParagraphBlock] = []
+            for block in page.blocks:
+                paragraph_index += 1
+                paragraph_issues = issues_by_paragraph.get(paragraph_index, [])
+                annotated_blocks.append(
+                    self._annotate_block(block, paragraph_issues) if paragraph_issues else block
+                )
+
+            annotated_pages.append(DocumentPage(number=page.number, blocks=annotated_blocks))
+
+        return annotated_pages
 
     def _parse_text(self, filename: str, text: str) -> ParsedContractDocument:
         if not text.strip():
@@ -118,7 +191,11 @@ class PythonDocxDocumentProcessor(ContractDocumentProcessor):
             blocks = [ParagraphBlock(id="page-1-block-1", runs=[TextRun(text="")])]
 
         if split_before_indices or split_after_indices:
-            pages = self._pages_from_explicit_breaks(blocks, split_before_indices, split_after_indices)
+            pages = self._pages_from_explicit_breaks(
+                blocks,
+                split_before_indices,
+                split_after_indices,
+            )
         else:
             pages = self._paginate_blocks(blocks, layout)
 
@@ -128,6 +205,7 @@ class PythonDocxDocumentProcessor(ContractDocumentProcessor):
             text=flatten_document_pages(pages),
             pages=pages,
             document_layout=layout,
+            source_file_bytes=file_bytes,
         )
 
     def _build_docx(self, contract: ContractDraft) -> DownloadableContractFile:
@@ -161,6 +239,11 @@ class PythonDocxDocumentProcessor(ContractDocumentProcessor):
                         run.font.size = Pt(run_data.font_size_pt)
                     if run_data.color:
                         run.font.color.rgb = RGBColor.from_string(run_data.color.lstrip("#"))
+                    if run_data.highlight_color:
+                        run.font.highlight_color = DOCX_HIGHLIGHT_BY_COLOR.get(
+                            run_data.highlight_color.lower(),
+                            WD_COLOR_INDEX.YELLOW,
+                        )
 
         buffer = BytesIO()
         document.save(buffer)
@@ -183,6 +266,22 @@ class PythonDocxDocumentProcessor(ContractDocumentProcessor):
                 continue
 
         raise ValueError("Не удалось определить кодировку файла. Используйте UTF-8 или CP1251.")
+
+    def _annotate_source_docx(self, file_bytes: bytes, issues: list[ContractIssue]) -> bytes:
+        document = Document(BytesIO(file_bytes))
+        issues_by_paragraph: dict[int, list[ContractIssue]] = {}
+
+        for issue in issues:
+            issues_by_paragraph.setdefault(issue.paragraph_index, []).append(issue)
+
+        for paragraph_index, paragraph in enumerate(document.paragraphs, start=1):
+            paragraph_issues = issues_by_paragraph.get(paragraph_index, [])
+            if paragraph_issues:
+                self._highlight_docx_paragraph(paragraph, paragraph_issues)
+
+        buffer = BytesIO()
+        document.save(buffer)
+        return buffer.getvalue()
 
     def _text_to_blocks(self, text: str) -> list[ParagraphBlock]:
         lines = text.splitlines() or [text]
@@ -230,10 +329,12 @@ class PythonDocxDocumentProcessor(ContractDocumentProcessor):
                         font_name=run.font.name or style_font.name,
                         font_size_pt=self._length_to_pt(run.font.size or style_font.size),
                         color=f"#{color}" if color else None,
+                        highlight_color=None,
                     )
                 )
 
         if not runs:
+            resolved_style_color = self._resolve_font_color(style_font)
             runs = [
                 TextRun(
                     text="",
@@ -242,11 +343,14 @@ class PythonDocxDocumentProcessor(ContractDocumentProcessor):
                     underline=self._resolve_run_flag(None, style_font.underline),
                     font_name=style_font.name,
                     font_size_pt=self._length_to_pt(style_font.size),
-                    color=f"#{self._resolve_font_color(style_font)}" if self._resolve_font_color(style_font) else None,
+                    color=f"#{resolved_style_color}" if resolved_style_color else None,
+                    highlight_color=None,
                 )
             ]
 
-        line_spacing_value = paragraph.paragraph_format.line_spacing or style_paragraph_format.line_spacing
+        line_spacing_value = (
+            paragraph.paragraph_format.line_spacing or style_paragraph_format.line_spacing
+        )
         if hasattr(line_spacing_value, "pt"):
             line_spacing = line_spacing_value.pt
         elif isinstance(line_spacing_value, (int, float)):
@@ -440,7 +544,9 @@ class PythonDocxDocumentProcessor(ContractDocumentProcessor):
                 return paragraph_format
             current_style = current_style.base_style
 
-        return style.paragraph_format if style is not None else Document().styles["Normal"].paragraph_format
+        if style is not None:
+            return style.paragraph_format
+        return Document().styles["Normal"].paragraph_format
 
     def _resolve_run_flag(self, run_value, style_value) -> bool:
         if run_value is not None:
@@ -458,3 +564,199 @@ class PythonDocxDocumentProcessor(ContractDocumentProcessor):
         if run.font.color is not None and run.font.color.rgb is not None:
             return str(run.font.color.rgb)
         return self._resolve_font_color(style_font)
+
+    def _annotate_block(
+        self,
+        block: ParagraphBlock,
+        issues: list[ContractIssue],
+    ) -> ParagraphBlock:
+        ranges = self._resolve_highlight_ranges(block.text, issues)
+        if not ranges:
+            return block
+
+        boundaries = {0, len(block.text)}
+        for start, end, _ in ranges:
+            boundaries.add(start)
+            boundaries.add(end)
+        sorted_boundaries = sorted(boundaries)
+
+        current_position = 0
+        annotated_runs: list[TextRun] = []
+
+        for run in block.runs:
+            run_text = run.text or ""
+            run_start = current_position
+            run_end = current_position + len(run_text)
+            current_position = run_end
+
+            if run_start == run_end:
+                annotated_runs.append(run)
+                continue
+
+            run_boundaries = [run_start]
+            run_boundaries.extend(
+                boundary for boundary in sorted_boundaries if run_start < boundary < run_end
+            )
+            run_boundaries.append(run_end)
+
+            for start, end in zip(run_boundaries, run_boundaries[1:], strict=False):
+                piece = run_text[start - run_start : end - run_start]
+                if not piece:
+                    continue
+                annotated_runs.append(
+                    replace(
+                        run,
+                        text=piece,
+                        highlight_color=self._resolve_highlight_color(start, end, ranges),
+                    )
+                )
+
+        if annotated_runs:
+            return replace(block, runs=annotated_runs)
+        return replace(
+            block,
+            runs=[replace(block.runs[0], highlight_color="#ffe08a")],
+        )
+
+    def _resolve_highlight_ranges(
+        self,
+        text: str,
+        issues: list[ContractIssue],
+    ) -> list[tuple[int, int, str]]:
+        ranges: list[tuple[int, int, str]] = []
+
+        for issue in sorted(issues, key=lambda item: self._severity_rank(item.severity)):
+            fragment = (issue.fragment or "").strip()
+            color = SEVERITY_TO_HIGHLIGHT.get(
+                issue.severity.lower(),
+                SEVERITY_TO_HIGHLIGHT["medium"],
+            )
+
+            if not fragment:
+                if text:
+                    ranges.append((0, len(text), color))
+                continue
+
+            matches = self._find_fragment_ranges(text, fragment)
+            if matches:
+                ranges.extend((start, end, color) for start, end in matches)
+            elif text:
+                ranges.append((0, len(text), color))
+
+        return ranges
+
+    def _find_fragment_ranges(self, text: str, fragment: str) -> list[tuple[int, int]]:
+        if not text or not fragment:
+            return []
+
+        lowered_text = text.lower()
+        lowered_fragment = fragment.lower()
+        matches: list[tuple[int, int]] = []
+        cursor = 0
+
+        while True:
+            index = lowered_text.find(lowered_fragment, cursor)
+            if index < 0:
+                break
+            matches.append((index, index + len(fragment)))
+            cursor = index + len(fragment)
+
+        if matches:
+            return matches
+
+        fragment_parts = [part for part in fragment.split() if part]
+        if not fragment_parts:
+            return []
+
+        pattern = r"\s+".join(re.escape(part) for part in fragment_parts)
+        return [(match.start(), match.end()) for match in re.finditer(pattern, text, re.IGNORECASE)]
+
+    def _resolve_highlight_color(
+        self,
+        start: int,
+        end: int,
+        ranges: list[tuple[int, int, str]],
+    ) -> str | None:
+        for range_start, range_end, color in ranges:
+            if start < range_end and end > range_start:
+                return color
+        return None
+
+    def _severity_rank(self, severity: str) -> int:
+        order = {"high": 0, "medium": 1, "low": 2}
+        return order.get(severity.lower(), 99)
+
+    def _highlight_docx_paragraph(self, paragraph, issues: list[ContractIssue]) -> None:
+        ranges = self._resolve_highlight_ranges(paragraph.text, issues)
+        if not ranges:
+            return
+
+        boundaries = {0, len(paragraph.text)}
+        for start, end, _ in ranges:
+            boundaries.add(start)
+            boundaries.add(end)
+        sorted_boundaries = sorted(boundaries)
+
+        current_position = 0
+        original_runs = list(paragraph.runs)
+
+        for run in original_runs:
+            run_text = run.text or ""
+            run_start = current_position
+            run_end = current_position + len(run_text)
+            current_position = run_end
+
+            if not run_text:
+                continue
+
+            run_boundaries = [run_start]
+            run_boundaries.extend(
+                boundary for boundary in sorted_boundaries if run_start < boundary < run_end
+            )
+            run_boundaries.append(run_end)
+
+            segments: list[tuple[str, WD_COLOR_INDEX | None]] = []
+            for start, end in zip(run_boundaries, run_boundaries[1:], strict=False):
+                piece = run_text[start - run_start : end - run_start]
+                if piece:
+                    segments.append(
+                        (
+                            piece,
+                            self._resolve_docx_highlight_color(start, end, ranges, run),
+                        )
+                    )
+
+            if not segments:
+                continue
+
+            run.text = segments[0][0]
+            run.font.highlight_color = segments[0][1]
+
+            insert_after = run
+            for piece, highlight_color in segments[1:]:
+                insert_after = self._clone_run_after(insert_after, piece, highlight_color)
+
+    def _clone_run_after(
+        self,
+        run,
+        text: str,
+        highlight_color: WD_COLOR_INDEX | None,
+    ):
+        cloned_xml = deepcopy(run._r)
+        run._r.addnext(cloned_xml)
+        cloned_run = DocxRun(cloned_xml, run._parent)
+        cloned_run.text = text
+        cloned_run.font.highlight_color = highlight_color
+        return cloned_run
+
+    def _resolve_docx_highlight_color(
+        self,
+        start: int,
+        end: int,
+        ranges: list[tuple[int, int, str]],
+        run,
+    ) -> WD_COLOR_INDEX | None:
+        for range_start, range_end, color in ranges:
+            if start < range_end and end > range_start:
+                return DOCX_HIGHLIGHT_BY_COLOR.get(color.lower(), WD_COLOR_INDEX.YELLOW)
+        return run.font.highlight_color

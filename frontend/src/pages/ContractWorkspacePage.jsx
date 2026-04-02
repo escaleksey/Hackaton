@@ -1,8 +1,9 @@
 import { useState } from "react";
 
 import { ContractEditor } from "../modules/contract-editor/components/ContractEditor";
+import { ContractIssuesPanel } from "../modules/contract-editor/components/ContractIssuesPanel";
 import { ContractUploadForm } from "../modules/contract-editor/components/ContractUploadForm";
-import { uploadContract, saveContract, downloadContract } from "../shared/api/contractsApi";
+import { downloadContract, saveContract, uploadContract } from "../shared/api/contractsApi";
 import { SectionCard } from "../shared/ui/SectionCard";
 
 function triggerBrowserDownload(blob, fileName) {
@@ -18,12 +19,15 @@ export function ContractWorkspacePage() {
   const [contract, setContract] = useState(null);
   const [correctedText, setCorrectedText] = useState("");
   const [correctedPages, setCorrectedPages] = useState([]);
+  const [issues, setIssues] = useState([]);
+  const [warnings, setWarnings] = useState([]);
   const [selectedPageIndex, setSelectedPageIndex] = useState(0);
   const [statusMessage, setStatusMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isMarkedDownloading, setIsMarkedDownloading] = useState(false);
 
   const clearMessages = () => {
     setStatusMessage("");
@@ -34,6 +38,8 @@ export function ContractWorkspacePage() {
     setContract(draft);
     setCorrectedText(draft.corrected_text);
     setCorrectedPages(draft.corrected_pages ?? []);
+    setIssues(draft.issues ?? []);
+    setWarnings(draft.warnings ?? []);
     setSelectedPageIndex(0);
   };
 
@@ -44,11 +50,7 @@ export function ContractWorkspacePage() {
     try {
       const draft = await uploadContract({ file, text });
       syncDraftState(draft);
-      setStatusMessage(
-        draft.source_format === "docx"
-          ? `DOCX-договор загружен. Страниц в предпросмотре: ${draft.corrected_pages.length || 1}.`
-          : "Договор загружен. Можно вносить правки и скачивать результат.",
-      );
+      setStatusMessage(`Документ проанализирован. Найдено замечаний: ${draft.issues?.length ?? 0}.`);
     } catch (error) {
       setErrorMessage(error.message);
     } finally {
@@ -69,9 +71,7 @@ export function ContractWorkspacePage() {
         correctedText: contract.source_format === "docx" ? undefined : correctedText,
         correctedPages: contract.source_format === "docx" ? correctedPages : undefined,
       });
-      setContract(updatedDraft);
-      setCorrectedText(updatedDraft.corrected_text);
-      setCorrectedPages(updatedDraft.corrected_pages ?? []);
+      syncDraftState(updatedDraft);
       setStatusMessage("Правки сохранены на сервере.");
       return updatedDraft;
     } catch (error) {
@@ -95,17 +95,34 @@ export function ContractWorkspacePage() {
         correctedText: contract.source_format === "docx" ? undefined : correctedText,
         correctedPages: contract.source_format === "docx" ? correctedPages : undefined,
       });
-      setContract(updatedDraft);
-      setCorrectedText(updatedDraft.corrected_text);
-      setCorrectedPages(updatedDraft.corrected_pages ?? []);
+      syncDraftState(updatedDraft);
 
       const { blob, fileName } = await downloadContract(contract.id);
       triggerBrowserDownload(blob, fileName);
-      setStatusMessage("Исправленный договор сохранен и отправлен на скачивание.");
+      setStatusMessage("Документ сохранен и отправлен на скачивание.");
     } catch (error) {
       setErrorMessage(error.message);
     } finally {
       setIsDownloading(false);
+    }
+  };
+
+  const handleDownloadMarked = async () => {
+    if (!contract) {
+      return;
+    }
+
+    setIsMarkedDownloading(true);
+    clearMessages();
+
+    try {
+      const { blob, fileName } = await downloadContract(contract.id);
+      triggerBrowserDownload(blob, fileName);
+      setStatusMessage("Размеченный документ отправлен на скачивание.");
+    } catch (error) {
+      setErrorMessage(error.message);
+    } finally {
+      setIsMarkedDownloading(false);
     }
   };
 
@@ -129,10 +146,10 @@ export function ContractWorkspacePage() {
       <div className="page">
         <header className="hero">
           <span className="hero__eyebrow">FastAPI + React</span>
-          <h1>Сервис внесения исправлений в договор</h1>
+          <h1>Сервис анализа и разметки договоров</h1>
           <p>
-            MVP для второго этапа: загрузка `.txt` и `.docx`, редактирование договора в SPA и
-            скачивание исправленной версии одним действием.
+            Загружайте `.docx` или `.txt`, получайте список замечаний в JSON и скачивайте документ с
+            подсвеченными проблемными фрагментами.
           </p>
         </header>
 
@@ -142,14 +159,14 @@ export function ContractWorkspacePage() {
 
             <SectionCard
               title="Что уже умеет сервис"
-              description="Теперь сервис поддерживает и обычный текст, и базовую работу с DOCX."
+              description="В одном потоке сервис извлекает текст, анализирует договор и готовит размеченный результат."
             >
               <ul>
-                <li>загрузка `.txt` и `.docx`-договоров или вставка текста вручную;</li>
-                <li>постраничный предпросмотр DOCX с сохранением базового форматирования;</li>
-                <li>редактирование исправленной версии прямо в браузере;</li>
-                <li>сохранение черновика на сервере;</li>
-                <li>скачивание исправленного `.txt` или `.docx` в один клик.</li>
+                <li>загрузка `.txt` и `.docx` договоров или вставка текста вручную;</li>
+                <li>rule-based и LLM-анализ сроков, дат, ролей сторон и логики обязательств;</li>
+                <li>строгий JSON со списком замечаний и уровнем критичности;</li>
+                <li>подсветка проблемных фрагментов в DOCX и в браузерном превью;</li>
+                <li>редактирование и повторное скачивание документа из интерфейса.</li>
               </ul>
             </SectionCard>
           </div>
@@ -159,23 +176,32 @@ export function ContractWorkspacePage() {
             {errorMessage ? <div className="status status--error">{errorMessage}</div> : null}
 
             {contract ? (
-              <ContractEditor
-                contract={contract}
-                correctedText={correctedText}
-                correctedPages={correctedPages}
-                selectedPageIndex={selectedPageIndex}
-                onSelectedPageChange={setSelectedPageIndex}
-                onCorrectedTextChange={setCorrectedText}
-                onDocxPageTextChange={handleDocxPageChange}
-                onSave={handleSave}
-                onSaveAndDownload={handleSaveAndDownload}
-                isSaving={isSaving}
-                isDownloading={isDownloading}
-              />
+              <>
+                <ContractIssuesPanel
+                  issues={issues}
+                  warnings={warnings}
+                  isDocx={contract.source_format === "docx"}
+                  onDownloadMarked={handleDownloadMarked}
+                  isDownloading={isMarkedDownloading}
+                />
+                <ContractEditor
+                  contract={contract}
+                  correctedText={correctedText}
+                  correctedPages={correctedPages}
+                  selectedPageIndex={selectedPageIndex}
+                  onSelectedPageChange={setSelectedPageIndex}
+                  onCorrectedTextChange={setCorrectedText}
+                  onDocxPageTextChange={handleDocxPageChange}
+                  onSave={handleSave}
+                  onSaveAndDownload={handleSaveAndDownload}
+                  isSaving={isSaving}
+                  isDownloading={isDownloading}
+                />
+              </>
             ) : (
               <SectionCard
                 title="Редактор пока пуст"
-                description="После загрузки договора здесь появятся исходная и исправленная версии документа."
+                description="После загрузки договора здесь появятся замечания, разметка и редактируемая версия документа."
               />
             )}
           </div>

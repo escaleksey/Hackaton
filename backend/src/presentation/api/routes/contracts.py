@@ -20,7 +20,9 @@ from src.presentation.api.dependencies import (
     get_update_contract_text_use_case,
 )
 from src.presentation.api.schemas import (
+    ContractAnalysisWarningSchema,
     ContractDraftResponse,
+    ContractIssueSchema,
     DocumentLayoutSchema,
     DocumentPageSchema,
     ParagraphBlockSchema,
@@ -41,6 +43,25 @@ def _to_response(result: ContractDraftResult) -> ContractDraftResponse:
         original_pages=[_page_to_schema(page) for page in result.original_pages],
         corrected_pages=[_page_to_schema(page) for page in result.corrected_pages],
         document_layout=_layout_to_schema(result.document_layout),
+        issues=[
+            ContractIssueSchema(
+                paragraph_index=issue.paragraph_index,
+                fragment=issue.fragment,
+                type=issue.type,
+                severity=issue.severity,
+                confidence=issue.confidence,
+                explanation=issue.explanation,
+                suggestion=issue.suggestion,
+            )
+            for issue in result.issues
+        ],
+        warnings=[
+            ContractAnalysisWarningSchema(
+                code=warning.code,
+                message=warning.message,
+            )
+            for warning in result.warnings
+        ],
         created_at=result.created_at,
     )
 
@@ -60,6 +81,7 @@ def _page_to_schema(page: DocumentPage) -> DocumentPageSchema:
                         font_name=run.font_name,
                         font_size_pt=run.font_size_pt,
                         color=run.color,
+                        highlight_color=run.highlight_color,
                     )
                     for run in block.runs
                 ],
@@ -104,6 +126,7 @@ def _pages_from_schema(pages: list[DocumentPageSchema]) -> list[DocumentPage]:
                             font_name=run.font_name,
                             font_size_pt=run.font_size_pt,
                             color=run.color,
+                            highlight_color=run.highlight_color,
                         )
                         for run in block.runs
                     ],
