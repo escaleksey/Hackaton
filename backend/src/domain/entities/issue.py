@@ -10,3 +10,4 @@ class ContractIssue:
     explanation: str
     suggestion: str
     confidence: str = "medium"
+    replacement: str | None = None

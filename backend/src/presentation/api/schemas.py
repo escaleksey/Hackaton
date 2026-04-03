@@ -48,6 +48,7 @@ class ContractIssueSchema(BaseModel):
     confidence: Literal["high", "medium", "low"]
     explanation: str
     suggestion: str
+    replacement: str | None = None
 
 
 class ContractAnalysisWarningSchema(BaseModel):

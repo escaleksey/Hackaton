@@ -1,8 +1,8 @@
 from src.application.services.contract_issue_analyzer import build_contract_analysis_document
 from src.domain.entities.document import DocumentPage, ParagraphBlock, TextRun
 from src.infrastructure.services.contract_issue_analyzer import (
-    OpenAIContractIssueAnalyzer,
-    OpenAIRateLimitError,
+    GeminiContractIssueAnalyzer,
+    GeminiRateLimitError,
     RuleBasedContractIssueAnalyzer,
 )
 
@@ -108,8 +108,95 @@ def test_rule_based_analyzer_finds_requested_ambiguous_phrase() -> None:
     assert any(issue.type == "AMBIGUOUS_PHRASE" for issue in issues)
 
 
-def test_openai_analyzer_returns_warning_after_quota_error(monkeypatch) -> None:
-    analyzer = OpenAIContractIssueAnalyzer()
+def test_rule_based_analyzer_finds_term_misuse_with_replacement() -> None:
+    document = build_contract_analysis_document(
+        filename="contract.docx",
+        source_format="docx",
+        text="",
+        pages=[
+            DocumentPage(
+                number=1,
+                blocks=[
+                    ParagraphBlock(
+                        id="1",
+                        runs=[TextRun(text="Клиент направляет заявку, а Заказчик подписывает приложение.")],
+                    ),
+                ],
+            )
+        ],
+    )
+
+    issues = RuleBasedContractIssueAnalyzer().analyze(document)
+
+    term_issue = next(issue for issue in issues if issue.type == "TERM_MISUSE")
+    assert term_issue.fragment == "Заказчик"
+    assert term_issue.replacement == "Клиент"
+
+
+def test_rule_based_analyzer_finds_deadline_before_quoted_signing_date() -> None:
+    document = build_contract_analysis_document(
+        filename="contract.docx",
+        source_format="docx",
+        text="",
+        pages=[
+            DocumentPage(
+                number=1,
+                blocks=[
+                    ParagraphBlock(id="1", runs=[TextRun(text="г. Москва\n«25» марта 2026 г.")]),
+                    ParagraphBlock(
+                        id="2",
+                        runs=[
+                            TextRun(
+                                text=(
+                                    "Покупатель обязуется открыть аккредитив в течение 5 рабочих дней "
+                                    "с даты подписания договора, но не позднее 01 марта 2026 года."
+                                )
+                            )
+                        ],
+                    ),
+                ],
+            )
+        ],
+    )
+
+    issues = RuleBasedContractIssueAnalyzer().analyze(document)
+
+    assert any(issue.type == "DEADLINE_CONFLICT" for issue in issues)
+
+
+def test_rule_based_analyzer_finds_contract_end_before_signing_date() -> None:
+    document = build_contract_analysis_document(
+        filename="contract.docx",
+        source_format="docx",
+        text="",
+        pages=[
+            DocumentPage(
+                number=1,
+                blocks=[
+                    ParagraphBlock(id="1", runs=[TextRun(text="г. Москва\n«25» марта 2026 г.")]),
+                    ParagraphBlock(
+                        id="2",
+                        runs=[
+                            TextRun(
+                                text=(
+                                    "Настоящий договор вступает в силу с момента его подписания "
+                                    "Сторонами 25 марта 2026 года и действует до 31 декабря 2025 года."
+                                )
+                            )
+                        ],
+                    ),
+                ],
+            )
+        ],
+    )
+
+    issues = RuleBasedContractIssueAnalyzer().analyze(document)
+
+    assert any(issue.type == "DATE_CONFLICT" for issue in issues)
+
+
+def test_gemini_analyzer_returns_warning_after_quota_error(monkeypatch) -> None:
+    analyzer = GeminiContractIssueAnalyzer()
     analyzer._api_key = "test-key"
 
     document = build_contract_analysis_document(
@@ -132,7 +219,7 @@ def test_openai_analyzer_returns_warning_after_quota_error(monkeypatch) -> None:
 
     def _raise_rate_limit(_chunk):
         calls["count"] += 1
-        raise OpenAIRateLimitError("quota exceeded", error_code="insufficient_quota")
+        raise GeminiRateLimitError("quota exceeded", error_code="resource_exhausted")
 
     monkeypatch.setattr(analyzer, "_request_chunk", _raise_rate_limit)
 
@@ -143,8 +230,8 @@ def test_openai_analyzer_returns_warning_after_quota_error(monkeypatch) -> None:
     assert calls["count"] == 1
 
 
-def test_openai_analyzer_sends_whole_cleaned_document_in_single_request(monkeypatch) -> None:
-    analyzer = OpenAIContractIssueAnalyzer()
+def test_gemini_analyzer_sends_whole_cleaned_document_in_single_request(monkeypatch) -> None:
+    analyzer = GeminiContractIssueAnalyzer()
     analyzer._api_key = "test-key"
     analyzer._max_characters_per_request = 5000
 
@@ -198,8 +285,8 @@ def test_openai_analyzer_sends_whole_cleaned_document_in_single_request(monkeypa
     ]
 
 
-def test_openai_analyzer_splits_large_document_into_sequential_chunks(monkeypatch) -> None:
-    analyzer = OpenAIContractIssueAnalyzer()
+def test_gemini_analyzer_splits_large_document_into_sequential_chunks(monkeypatch) -> None:
+    analyzer = GeminiContractIssueAnalyzer()
     analyzer._api_key = "test-key"
     analyzer._max_characters_per_request = 40
 

@@ -12,7 +12,7 @@ export function ContractUploadForm({ onSubmit, isLoading }) {
   return (
     <form className="card" onSubmit={handleSubmit}>
       <h2>Загрузка договора</h2>
-      <p>Загрузите текстовый файл договора или вставьте текст вручную, чтобы сразу перейти к правкам.</p>
+      <p>Загрузите текстовый файл договора или вставьте текст вручную, чтобы сразу перейти к правкам</p>
 
       <div className="field">
         <label htmlFor="contract-file">Файл договора</label>
@@ -21,16 +21,6 @@ export function ContractUploadForm({ onSubmit, isLoading }) {
           type="file"
           accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-        />
-      </div>
-
-      <div className="field">
-        <label htmlFor="contract-text">Текст договора</label>
-        <textarea
-          id="contract-text"
-          placeholder="Если файла под рукой нет, вставьте сюда текст договора. Для DOCX загрузите файл."
-          value={text}
-          onChange={(event) => setText(event.target.value)}
         />
       </div>
 

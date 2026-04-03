@@ -282,3 +282,30 @@ def test_apply_and_download_docx_preserves_heading_formatting_and_highlights(
     assert heading.runs[0].font.size is not None
     assert round(heading.runs[0].font.size.pt) == 18
     assert any(run.font.highlight_color == WD_COLOR_INDEX.YELLOW for run in body.runs)
+
+
+def test_upload_returns_issue_replacement_field(client: TestClient) -> None:
+    app.dependency_overrides[get_create_contract_draft_use_case] = override_create_use_case(
+        [
+            ContractIssue(
+                paragraph_index=1,
+                fragment="Заказчик",
+                type="TERM_MISUSE",
+                severity="medium",
+                confidence="high",
+                explanation="Термин стороны используется непоследовательно.",
+                suggestion="Унифицировать термин по всему договору.",
+                replacement="Клиент",
+            )
+        ]
+    )
+
+    upload_response = client.post(
+        "/api/v1/contracts/upload",
+        data={"text": "Клиент подписывает договор. Заказчик оплачивает услуги."},
+    )
+
+    assert upload_response.status_code == 201
+    draft = upload_response.json()
+    assert draft["issues"][0]["type"] == "TERM_MISUSE"
+    assert draft["issues"][0]["replacement"] == "Клиент"
