@@ -15,6 +15,58 @@ function triggerBrowserDownload(blob, fileName) {
   URL.revokeObjectURL(url);
 }
 
+function replaceFirstOccurrence(text, search, replacement) {
+  if (!text || !search || replacement == null) {
+    return { text, changed: false };
+  }
+
+  const index = text.indexOf(search);
+  if (index < 0) {
+    return { text, changed: false };
+  }
+
+  return {
+    text: `${text.slice(0, index)}${replacement}${text.slice(index + search.length)}`,
+    changed: true,
+  };
+}
+
+function applyIssueToPages(pages, issue) {
+  let changed = false;
+
+  const nextPages = pages.map((page) => ({
+    ...page,
+    blocks: page.blocks.map((block) => {
+      if (changed) {
+        return block;
+      }
+
+      const blockText = block.runs?.map((run) => run.text ?? "").join("") ?? "";
+      const replacementResult = replaceFirstOccurrence(blockText, issue.fragment, issue.replacement);
+
+      if (!replacementResult.changed) {
+        return block;
+      }
+
+      changed = true;
+      const templateRun = block.runs?.[0] ?? {};
+
+      return {
+        ...block,
+        runs: [
+          {
+            ...templateRun,
+            text: replacementResult.text,
+            highlight_color: null,
+          },
+        ],
+      };
+    }),
+  }));
+
+  return { pages: nextPages, changed };
+}
+
 export function ContractWorkspacePage() {
   const [contract, setContract] = useState(null);
   const [correctedText, setCorrectedText] = useState("");
@@ -50,7 +102,7 @@ export function ContractWorkspacePage() {
     try {
       const draft = await uploadContract({ file, text });
       syncDraftState(draft);
-      setStatusMessage(`Документ проанализирован. Найдено замечаний: ${draft.issues?.length ?? 0}.`);
+      setStatusMessage(`Документ проанализирован. Найдено замечаний: ${draft.issues?.length ?? 0}`);
     } catch (error) {
       setErrorMessage(error.message);
     } finally {
@@ -72,7 +124,7 @@ export function ContractWorkspacePage() {
         correctedPages: contract.source_format === "docx" ? correctedPages : undefined,
       });
       syncDraftState(updatedDraft);
-      setStatusMessage("Правки сохранены на сервере.");
+      setStatusMessage("Правки сохранены на сервере");
       return updatedDraft;
     } catch (error) {
       setErrorMessage(error.message);
@@ -99,7 +151,7 @@ export function ContractWorkspacePage() {
 
       const { blob, fileName } = await downloadContract(contract.id);
       triggerBrowserDownload(blob, fileName);
-      setStatusMessage("Документ сохранен и отправлен на скачивание.");
+      setStatusMessage("Документ сохранен и отправлен на скачивание");
     } catch (error) {
       setErrorMessage(error.message);
     } finally {
@@ -118,7 +170,7 @@ export function ContractWorkspacePage() {
     try {
       const { blob, fileName } = await downloadContract(contract.id);
       triggerBrowserDownload(blob, fileName);
-      setStatusMessage("Размеченный документ отправлен на скачивание.");
+      setStatusMessage("Размеченный документ отправлен на скачивание");
     } catch (error) {
       setErrorMessage(error.message);
     } finally {
@@ -141,34 +193,97 @@ export function ContractWorkspacePage() {
     );
   };
 
+  const handleApplyIssue = (issue) => {
+    if (!issue?.fragment || !issue?.replacement) {
+      return;
+    }
+
+    clearMessages();
+
+    if (contract?.source_format === "docx") {
+      const { pages, changed } = applyIssueToPages(correctedPages, issue);
+      if (!changed) {
+        setErrorMessage("Не удалось автоматически применить замену в DOCX. Проверьте формулировку вручную");
+        return;
+      }
+
+      setCorrectedPages(pages);
+      setStatusMessage(`Замена применена: «${issue.fragment}» → «${issue.replacement}».`);
+      return;
+    }
+
+    const replacementResult = replaceFirstOccurrence(correctedText, issue.fragment, issue.replacement);
+    if (!replacementResult.changed) {
+      setErrorMessage("Не удалось автоматически применить замену. Проверьте текст договора вручную");
+      return;
+    }
+
+    setCorrectedText(replacementResult.text);
+    setStatusMessage(`Замена применена: «${issue.fragment}» → «${issue.replacement}»`);
+  };
+
+  const handleApplyAllSuggestions = () => {
+    const applicableIssues = issues.filter((issue) => issue.fragment && issue.replacement);
+    if (!applicableIssues.length) {
+      return;
+    }
+
+    clearMessages();
+
+    if (contract?.source_format === "docx") {
+      let nextPages = correctedPages;
+      let appliedCount = 0;
+
+      applicableIssues.forEach((issue) => {
+        const result = applyIssueToPages(nextPages, issue);
+        nextPages = result.pages;
+        if (result.changed) {
+          appliedCount += 1;
+        }
+      });
+
+      setCorrectedPages(nextPages);
+      setStatusMessage(
+        appliedCount
+          ? `Автозамены применены: ${appliedCount}. Документ можно сразу сохранить и скачать`
+          : "Автозамены не применились автоматически. Проверьте формулировки вручную",
+      );
+      return;
+    }
+
+    let nextText = correctedText;
+    let appliedCount = 0;
+
+    applicableIssues.forEach((issue) => {
+      const result = replaceFirstOccurrence(nextText, issue.fragment, issue.replacement);
+      nextText = result.text;
+      if (result.changed) {
+        appliedCount += 1;
+      }
+    });
+
+    setCorrectedText(nextText);
+    setStatusMessage(
+      appliedCount
+        ? `Автозамены применены: ${appliedCount}. Текст готов к сохранению и скачиванию`
+        : "Автозамены не применились автоматически. Проверьте формулировки вручную",
+    );
+  };
+
   return (
     <div className="page-shell">
       <div className="page">
         <header className="hero">
-          <span className="hero__eyebrow">FastAPI + React</span>
           <h1>Сервис анализа и разметки договоров</h1>
           <p>
             Загружайте `.docx` или `.txt`, получайте список замечаний в JSON и скачивайте документ с
-            подсвеченными проблемными фрагментами.
+            подсвеченными проблемными фрагментами
           </p>
         </header>
 
         <div className="workspace-grid">
           <div>
             <ContractUploadForm onSubmit={handleUpload} isLoading={isLoading} />
-
-            <SectionCard
-              title="Что уже умеет сервис"
-              description="В одном потоке сервис извлекает текст, анализирует договор и готовит размеченный результат."
-            >
-              <ul>
-                <li>загрузка `.txt` и `.docx` договоров или вставка текста вручную;</li>
-                <li>rule-based и LLM-анализ сроков, дат, ролей сторон и логики обязательств;</li>
-                <li>строгий JSON со списком замечаний и уровнем критичности;</li>
-                <li>подсветка проблемных фрагментов в DOCX и в браузерном превью;</li>
-                <li>редактирование и повторное скачивание документа из интерфейса.</li>
-              </ul>
-            </SectionCard>
           </div>
 
           <div>
@@ -181,6 +296,8 @@ export function ContractWorkspacePage() {
                   issues={issues}
                   warnings={warnings}
                   isDocx={contract.source_format === "docx"}
+                  onApplyIssue={handleApplyIssue}
+                  onApplyAllSuggestions={handleApplyAllSuggestions}
                   onDownloadMarked={handleDownloadMarked}
                   isDownloading={isMarkedDownloading}
                 />
@@ -201,7 +318,7 @@ export function ContractWorkspacePage() {
             ) : (
               <SectionCard
                 title="Редактор пока пуст"
-                description="После загрузки договора здесь появятся замечания, разметка и редактируемая версия документа."
+                description="После загрузки договора здесь появятся замечания, разметка и редактируемая версия документа"
               />
             )}
           </div>

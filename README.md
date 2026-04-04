@@ -32,10 +32,10 @@ uvicorn src.main:app --reload
 
 Для LLM нужно заполнить `backend/.env`:
 
-- `OPENAI_API_KEY` - ваш API key OpenAI;
-- `OPENAI_CONTRACT_REVIEW_MODEL` - модель для анализа, по умолчанию `gpt-4o-mini`;
-- `OPENAI_RESPONSES_BASE_URL` - URL Responses API, обычно менять не нужно;
-- `OPENAI_TIMEOUT_SECONDS` - таймаут запроса к OpenAI.
+- `GEMINI_API_KEY` - ваш API key Gemini;
+- `GEMINI_CONTRACT_REVIEW_MODEL` - модель для анализа, по умолчанию `gemini-2.0-flash`;
+- `GEMINI_GENERATE_CONTENT_BASE_URL` - базовый URL Gemini API, обычно менять не нужно;
+- `GEMINI_TIMEOUT_SECONDS` - таймаут запроса к Gemini.
 
 Backend будет доступен на `http://127.0.0.1:8000`, Swagger UI на `http://127.0.0.1:8000/docs`.
 

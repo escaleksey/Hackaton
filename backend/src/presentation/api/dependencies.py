@@ -11,7 +11,7 @@ from src.infrastructure.repositories.in_memory_contract_repository import (
 )
 from src.infrastructure.services.contract_issue_analyzer import (
     CompositeContractIssueAnalyzer,
-    OpenAIContractIssueAnalyzer,
+    GeminiContractIssueAnalyzer,
     RuleBasedContractIssueAnalyzer,
 )
 from src.infrastructure.services.python_docx_document_processor import (
@@ -34,7 +34,7 @@ def get_contract_issue_analyzer() -> ContractIssueAnalyzer:
     return CompositeContractIssueAnalyzer(
         [
             RuleBasedContractIssueAnalyzer(),
-            OpenAIContractIssueAnalyzer(),
+            GeminiContractIssueAnalyzer(),
         ]
     )
 

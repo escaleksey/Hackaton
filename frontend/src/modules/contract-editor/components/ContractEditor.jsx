@@ -24,15 +24,10 @@ export function ContractEditor({
       <section className="card editor editor--docx">
         <div>
           <h2>DOCX-редактор договора</h2>
-          <p>
-            Документ показывается постранично. Открывается только редактируемый лист, чтобы ничего не
-            отвлекало от правок и форматирования.
-          </p>
         </div>
 
         <div className="editor__meta">
           <span>Файл: {contract.filename}</span>
-          <span>Черновик: {contract.id}</span>
           <span>Страниц: {totalPages}</span>
         </div>
 

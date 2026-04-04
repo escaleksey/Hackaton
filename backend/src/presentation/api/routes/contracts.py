@@ -52,6 +52,7 @@ def _to_response(result: ContractDraftResult) -> ContractDraftResponse:
                 confidence=issue.confidence,
                 explanation=issue.explanation,
                 suggestion=issue.suggestion,
+                replacement=issue.replacement,
             )
             for issue in result.issues
         ],

@@ -14,22 +14,37 @@ export function ContractIssuesPanel({
   warnings = [],
   issues,
   isDocx,
+  onApplyIssue,
+  onApplyAllSuggestions,
   onDownloadMarked,
   isDownloading,
 }) {
+  const applicableIssues = issues.filter((issue) => issue.fragment && issue.replacement);
+
   return (
     <section className="card issues-panel">
       <div className="issues-panel__header">
         <div>
           <h2>Найденные замечания</h2>
-          <p>Сервис возвращает JSON со списком проблем и размеченный документ для скачивания.</p>
         </div>
 
-        {isDocx ? (
-          <button className="button button--primary" type="button" onClick={onDownloadMarked} disabled={isDownloading}>
-            {isDownloading ? "Готовим DOCX..." : "Скачать размеченный DOCX"}
-          </button>
-        ) : null}
+        <div className="issues-panel__actions">
+          {applicableIssues.length ? (
+            <button className="button button--secondary" type="button" onClick={onApplyAllSuggestions}>
+              Применить все автозамены
+            </button>
+          ) : null}
+          {isDocx ? (
+            <button
+              className="button button--primary"
+              type="button"
+              onClick={onDownloadMarked}
+              disabled={isDownloading}
+            >
+              {isDownloading ? "Готовим DOCX..." : "Скачать размеченный DOCX"}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {warnings.length ? (
@@ -60,12 +75,22 @@ export function ContractIssuesPanel({
               <p>
                 <strong>Рекомендуемая замена:</strong> {issue.suggestion}
               </p>
+              {issue.replacement ? (
+                <div className="issue-card__actions">
+                  <p className="issue-card__replacement">
+                    <strong>Автозамена:</strong> {issue.replacement}
+                  </p>
+                  <button className="button button--secondary" type="button" onClick={() => onApplyIssue?.(issue)}>
+                    Применить замену
+                  </button>
+                </div>
+              ) : null}
             </article>
           ))}
         </div>
       ) : (
         <p className="issues-panel__empty">
-          По заданным правилам замечаний не найдено. В JSON сервис вернул пустой список `issues`.
+          По текущим правилам замечаний не найдено. Сервис вернул пустой список `issues`
         </p>
       )}
     </section>
