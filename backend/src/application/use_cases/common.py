@@ -16,5 +16,7 @@ def to_result(contract: ContractDraft) -> ContractDraftResult:
         original_pages=contract.original_pages,
         corrected_pages=contract.current_pages,
         document_layout=contract.document_layout,
+        issues=contract.issues,
+        warnings=contract.warnings,
         created_at=contract.created_at,
     )

@@ -9,6 +9,7 @@ function makeRun(baseRun = {}, text = "") {
     font_name: baseRun.font_name ?? null,
     font_size_pt: baseRun.font_size_pt ?? null,
     color: baseRun.color ?? null,
+    highlight_color: baseRun.highlight_color ?? null,
   };
 }
 
@@ -45,6 +46,7 @@ function getRunDataset(run) {
     "data-font-name": run.font_name ?? "",
     "data-font-size": run.font_size_pt ?? "",
     "data-color": run.color ?? "",
+    "data-highlight-color": run.highlight_color ?? "",
   };
 }
 
@@ -148,6 +150,8 @@ function serializeInlineNode(node, fallbackRun) {
       pxToPt(computedStyles.fontSize) ??
       fallbackRun.font_size_pt,
     color: element.dataset.color || rgbToHex(computedStyles.color, fallbackRun.color),
+    highlight_color:
+      element.dataset.highlightColor || rgbToHex(computedStyles.backgroundColor, fallbackRun.highlight_color),
   };
 
   if (element.tagName === "STRONG" || element.tagName === "B") {
@@ -237,6 +241,7 @@ function getRunStyle(run) {
     fontFamily: run.font_name ?? "Georgia, serif",
     fontSize: run.font_size_pt ? `${run.font_size_pt}pt` : undefined,
     color: run.color ?? "inherit",
+    backgroundColor: run.highlight_color ?? undefined,
   };
 }
 

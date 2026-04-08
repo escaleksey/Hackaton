@@ -1,6 +1,7 @@
 from functools import lru_cache
 
 from src.application.services.document_processor import ContractDocumentProcessor
+from src.application.services.legal_ai_pipeline import LegalAiPipeline
 from src.application.use_cases.create_contract_draft import CreateContractDraftUseCase
 from src.application.use_cases.download_contract import DownloadContractUseCase
 from src.application.use_cases.get_contract_draft import GetContractDraftUseCase
@@ -8,6 +9,7 @@ from src.application.use_cases.update_contract_text import UpdateContractTextUse
 from src.infrastructure.repositories.in_memory_contract_repository import (
     InMemoryContractRepository,
 )
+from src.infrastructure.services.legal_ai_pipeline import SemanticLegalAiPipeline
 from src.infrastructure.services.python_docx_document_processor import (
     PythonDocxDocumentProcessor,
 )
@@ -23,8 +25,17 @@ def get_document_processor() -> ContractDocumentProcessor:
     return PythonDocxDocumentProcessor()
 
 
+@lru_cache(maxsize=1)
+def get_legal_ai_pipeline() -> LegalAiPipeline:
+    return SemanticLegalAiPipeline()
+
+
 def get_create_contract_draft_use_case() -> CreateContractDraftUseCase:
-    return CreateContractDraftUseCase(get_contract_repository(), get_document_processor())
+    return CreateContractDraftUseCase(
+        get_contract_repository(),
+        get_document_processor(),
+        get_legal_ai_pipeline(),
+    )
 
 
 def get_get_contract_draft_use_case() -> GetContractDraftUseCase:

@@ -26,8 +26,16 @@ cd backend
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
+copy .env.example .env
 uvicorn src.main:app --reload
 ```
+
+Для LLM нужно заполнить `backend/.env`:
+
+- `GEMINI_API_KEY` - ваш API key Gemini;
+- `GEMINI_CONTRACT_REVIEW_MODEL` - модель для анализа, по умолчанию `gemini-2.0-flash`;
+- `GEMINI_GENERATE_CONTENT_BASE_URL` - базовый URL Gemini API, обычно менять не нужно;
+- `GEMINI_TIMEOUT_SECONDS` - таймаут запроса к Gemini.
 
 Backend будет доступен на `http://127.0.0.1:8000`, Swagger UI на `http://127.0.0.1:8000/docs`.
 
@@ -95,6 +103,8 @@ make ci
 ```bash
 docker compose up -d --build
 ```
+
+`docker compose` автоматически подхватит переменные из `backend/.env`.
 
 После запуска:
 

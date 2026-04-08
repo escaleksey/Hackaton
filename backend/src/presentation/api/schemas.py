@@ -13,6 +13,7 @@ class TextRunSchema(BaseModel):
     font_name: str | None = None
     font_size_pt: float | None = None
     color: str | None = None
+    highlight_color: str | None = None
 
 
 class ParagraphBlockSchema(BaseModel):
@@ -39,6 +40,22 @@ class DocumentLayoutSchema(BaseModel):
     margin_left_pt: float | None = None
 
 
+class ContractIssueSchema(BaseModel):
+    paragraph_index: int
+    fragment: str
+    type: str
+    severity: Literal["high", "medium", "low"]
+    confidence: Literal["high", "medium", "low"]
+    explanation: str
+    suggestion: str
+    replacement: str | None = None
+
+
+class ContractAnalysisWarningSchema(BaseModel):
+    code: str
+    message: str
+
+
 class ContractDraftResponse(BaseModel):
     id: UUID
     filename: str
@@ -48,6 +65,8 @@ class ContractDraftResponse(BaseModel):
     original_pages: list[DocumentPageSchema] = Field(default_factory=list)
     corrected_pages: list[DocumentPageSchema] = Field(default_factory=list)
     document_layout: DocumentLayoutSchema | None = None
+    issues: list[ContractIssueSchema] = Field(default_factory=list)
+    warnings: list[ContractAnalysisWarningSchema] = Field(default_factory=list)
     created_at: datetime
 
 
