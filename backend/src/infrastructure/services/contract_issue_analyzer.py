@@ -794,6 +794,68 @@ class GeminiContractIssueAnalyzer(ContractIssueAnalyzer):
             return ContractAnalysisResult(issues=issues, warnings=[warning])
 
         return ContractAnalysisResult(issues=issues, warnings=[])
+    
+    def analyze_with_context(
+        self,
+        document: ContractAnalysisDocument,
+        semantic_summary: str,
+        candidate_signals: list[str],
+    ) -> ContractAnalysisResult:
+        if not self._api_key or not document.paragraphs:
+            return ContractAnalysisResult(issues=[], warnings=[])
+
+        issues: list[ContractIssue] = []
+        warnings: list[ContractAnalysisWarning] = []
+
+        context_prompt = (
+            "Используй следующий семантический контекст документа для глубокого анализа:\n"
+            f"<SEMANTIC_CONTEXT>\n{semantic_summary}\n</SEMANTIC_CONTEXT>\n\n"
+        )
+        
+        if candidate_signals:
+            context_prompt += (
+                "Обрати особое внимание на следующие потенциальные проблемы, выявленные ранее:\n"
+                f"<CANDIDATE_SIGNALS>\n" + "\n".join(candidate_signals) + "\n</CANDIDATE_SIGNALS>\n\n"
+            )
+
+        context_prompt += (
+            "Твоя задача — выявить:\n"
+            "1. Некорректное употребление терминов и предложить замену\n"
+            "2. Логические противоречия в условиях\n"
+            "3. Расхождения в наименованиях контрагентов\n"
+            "4. Противоречия в датах и сроках\n\n"
+            "Для каждой проблемы обязательно предложи замену в поле 'replacement', "
+            "чтобы исправление можно было внести в текст автоматически"
+        )
+
+        prepared_paragraphs = self._prepare_paragraphs(document)
+        if not prepared_paragraphs:
+            return ContractAnalysisResult(issues=[], warnings=[])
+
+        try:
+            for chunk in self._chunk_paragraphs(prepared_paragraphs):
+                payload = self._request_chunk(chunk, context_prompt=context_prompt)
+                if payload is None:
+                    continue
+                
+                chunk_issues = self._to_issues(payload, len(document.paragraphs))
+                issues.extend(chunk_issues)
+                
+        except GeminiRateLimitError as error:
+            warning = self._warning_from_gemini_error(error)
+            LOGGER.warning(
+                "Gemini context analysis skipped due to rate limits: %s",
+                warning.message,
+            )
+            warnings.append(warning)
+        except Exception as error:
+            LOGGER.error("Unexpected error during Gemini context analysis: %s", error)
+            warnings.append(ContractAnalysisWarning(
+                code="llm_analysis_error",
+                message=f"Ошибка при выполнении LLM-анализа: {str(error)}"
+            ))
+
+        return ContractAnalysisResult(issues=issues, warnings=warnings)
 
     def _prepare_paragraphs(
         self,
@@ -894,26 +956,38 @@ class GeminiContractIssueAnalyzer(ContractIssueAnalyzer):
 
         return chunks
 
-    def _request_chunk(self, chunk: list[tuple[int, str]]) -> LlmIssueResponse | None:
-        user_message = "\n".join(f"[{index}] {text}" for index, text in chunk if text.strip())
-        if not user_message:
+    def _request_chunk(
+        self, 
+        chunk: list[tuple[int, str]], 
+        context_prompt: str | None = None,
+        custom_prompt: str | None = None
+    ) -> LlmIssueResponse | None:
+        effective_prompt = custom_prompt if custom_prompt is not None else context_prompt
+
+        document_text = "\n".join(f"[{index}] {text}" for index, text in chunk if text.strip())
+        if not document_text:
             return None
+
+        user_message = document_text
+        if context_prompt:
+            user_message = f"{effective_prompt}\n\nТЕКСТ ДОГОВОРА ДЛЯ АНАЛИЗА:\n{document_text}"
 
         request_payload = self._build_request_payload(user_message)
 
-        with httpx.Client(timeout=self._timeout_seconds) as client:
+        with httpx.Client(timeout=self._timeout_seconds ) as client:
             response = self._post_with_retries(client, request_payload)
             if response is None:
                 return None
 
-        payload = response.json()
-        output_text = self._extract_output_text(payload)
-        if not output_text:
-            return None
-
         try:
-            return LlmIssueResponse.model_validate(json.loads(output_text))
-        except (json.JSONDecodeError, ValidationError) as error:
+            payload = response.json()
+            output_text = self._extract_output_text(payload)
+            if not output_text:
+                return None
+            
+            clean_json = re.sub(r"^```json\s*|\s*```$", "", output_text.strip(), flags=re.MULTILINE | re.IGNORECASE)
+            return LlmIssueResponse.model_validate(json.loads(clean_json))
+        except (json.JSONDecodeError, ValidationError, ValueError) as error:
             LOGGER.warning("Gemini contract analysis response validation failed: %s", error)
             return None
 
@@ -934,7 +1008,7 @@ class GeminiContractIssueAnalyzer(ContractIssueAnalyzer):
                             "sorted by paragraph order. "
                             "Write concise Russian explanation and suggestion, one sentence "
                             "each, no more than 180 characters per field. Include replacement only "
-                            "when you can confidently propose an exact substitute. Return strict JSON only."
+                            "when you can confidently propose an exact substitute. Return strict JSON only"
                         ),
                     }
                 ]
@@ -1056,7 +1130,7 @@ class GeminiContractIssueAnalyzer(ContractIssueAnalyzer):
             return ContractAnalysisWarning(
                 code="llm_insufficient_quota",
                 message=(
-                    "LLM-анализ Gemini не выполнен: исчерпана квота или не подключён биллинг. "
+                    "LLM-анализ Gemini не выполнен: исчерпана квота или не подключён биллинг"
                     "\u041f\u043e\u043a\u0430\u0437\u0430\u043d\u044b \u0442\u043e\u043b\u044c\u043a\u043e \u043b\u043e\u043a\u0430\u043b\u044c\u043d\u044b\u0435 rule-based \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438."
                 ),
             )

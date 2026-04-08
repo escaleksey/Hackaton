@@ -5,10 +5,9 @@ from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_COLOR_INDEX
 from fastapi.testclient import TestClient
 
-from src.application.services.contract_issue_analyzer import (
-    ContractAnalysisDocument,
-    ContractAnalysisResult,
-    ContractIssueAnalyzer,
+from src.application.services.legal_ai_pipeline import (
+    LegalAiPipeline,
+    SemanticAnalysisResult,
 )
 from src.domain.entities.analysis_warning import ContractAnalysisWarning
 from src.application.use_cases.create_contract_draft import CreateContractDraftUseCase
@@ -21,7 +20,7 @@ from src.presentation.api.dependencies import (
 )
 
 
-class StubIssueAnalyzer(ContractIssueAnalyzer):
+class StubLegalAiPipeline(LegalAiPipeline):
     def __init__(
         self,
         issues: list[ContractIssue],
@@ -30,8 +29,8 @@ class StubIssueAnalyzer(ContractIssueAnalyzer):
         self._issues = issues
         self._warnings = warnings or []
 
-    def analyze_result(self, document: ContractAnalysisDocument) -> ContractAnalysisResult:
-        return ContractAnalysisResult(issues=self._issues, warnings=self._warnings)
+    def analyze(self, document) -> SemanticAnalysisResult:
+        return SemanticAnalysisResult(issues=self._issues, warnings=self._warnings)
 
 
 @pytest.fixture(autouse=True)
@@ -72,7 +71,7 @@ def override_create_use_case(
         return CreateContractDraftUseCase(
             get_contract_repository(),
             get_document_processor(),
-            StubIssueAnalyzer(issues, warnings),
+            StubLegalAiPipeline(issues, warnings),
         )
 
     return _factory

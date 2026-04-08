@@ -64,8 +64,6 @@ export function ContractIssuesPanel({
                   {severityLabel(issue.severity)}
                 </span>
                 <span>Абзац #{issue.paragraph_index}</span>
-                <span>Тип: {issue.type}</span>
-                <span>Уверенность: {issue.confidence}</span>
               </div>
 
               <p className="issue-card__fragment">«{issue.fragment}»</p>

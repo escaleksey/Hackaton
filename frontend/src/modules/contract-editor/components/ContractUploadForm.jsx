@@ -12,7 +12,7 @@ export function ContractUploadForm({ onSubmit, isLoading }) {
   return (
     <form className="card" onSubmit={handleSubmit}>
       <h2>Загрузка договора</h2>
-      <p>Загрузите текстовый файл договора или вставьте текст вручную, чтобы сразу перейти к правкам</p>
+      <p>Загрузите текстовый файл договора, чтобы сразу перейти к правкам</p>
 
       <div className="field">
         <label htmlFor="contract-file">Файл договора</label>

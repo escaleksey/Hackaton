@@ -171,7 +171,7 @@ class PythonDocxDocumentProcessor(ContractDocumentProcessor):
         try:
             document = Document(BytesIO(file_bytes))
         except Exception as error:
-            raise ValueError("Не удалось прочитать DOCX-файл.") from error
+            raise ValueError("Не удалось прочитать DOCX-файл") from error
 
         layout = self._extract_layout(document)
         blocks: list[ParagraphBlock] = []
@@ -265,7 +265,7 @@ class PythonDocxDocumentProcessor(ContractDocumentProcessor):
             except UnicodeDecodeError:
                 continue
 
-        raise ValueError("Не удалось определить кодировку файла. Используйте UTF-8 или CP1251.")
+        raise ValueError("Не удалось определить кодировку файла. Используйте UTF-8 или CP1251")
 
     def _annotate_source_docx(self, file_bytes: bytes, issues: list[ContractIssue]) -> bytes:
         document = Document(BytesIO(file_bytes))
